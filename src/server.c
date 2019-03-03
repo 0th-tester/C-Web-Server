@@ -90,13 +90,18 @@ int send_response(int fd, char *header, char *content_type, void *body, int cont
 void get_d20(int fd)
 {
     // Generate a random number between 1 and 20 inclusive
-    
+    srand(time(NULL));
+    int random = rand() % 20 + 1;
     ///////////////////
     // IMPLEMENT ME! //
     ///////////////////
-
+    char response[8];
+    sprintf(response, "%d", random);
     // Use send_response() to send it back as text/plain data
+    char *mime_type = "text/plain";
+    // mime_type = mime_type_get("txt");
 
+    send_response(fd, "HTTP/1.1 200 OK", mime_type, response, strlen(response));
     ///////////////////
     // IMPLEMENT ME! //
     ///////////////////
@@ -181,6 +186,21 @@ void handle_http_request(int fd, struct cache *cache)
 
 
     // (Stretch) If POST, handle the post request
+    char method[8];
+    char endpoint[512];
+    char protocol[20];
+    printf("%s\n", request);
+    sscanf(request, "%s %s %s", method, endpoint, protocol);
+    printf("%s\n", endpoint);
+    if ( strcmp(method, "GET") == 0 ) {
+         if ( strcmp(endpoint, "/d20") == 0 ) {
+             get_d20(fd);
+         } else {
+             resp_404(fd);
+         }
+    } else if ( strcmp(method, "POST") == 0 ) {
+
+    }
 }
 
 /**
@@ -227,8 +247,8 @@ int main(void)
         
         // newfd is a new socket descriptor for the new connection.
         // listenfd is still listening for new connections.
-        resp_404(newfd);
-        // handle_http_request(newfd, cache);
+        // resp_404(newfd);
+        handle_http_request(newfd, cache);
 
         close(newfd);
     }
