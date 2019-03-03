@@ -58,9 +58,23 @@ int send_response(int fd, char *header, char *content_type, void *body, int cont
     ///////////////////
     // IMPLEMENT ME! //
     ///////////////////
-
+    time_t rawtime;
+    struct tm *timeinfo;
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    
+    int response_length = sprintf(
+        response,
+        "%s\nDate: %sConnection: close\nContent-Length: %d\nContent-Type: %s\n\n%s",
+        header,
+        asctime(timeinfo),
+        content_length,
+        content_type,
+        body
+    );
+    // printf(response);
     // Send it all!
-    int rv = send(fd, response, response_length, 0);
+    int rv = send(fd, response, response_length , 0);
 
     if (rv < 0) {
         perror("send");
@@ -213,8 +227,8 @@ int main(void)
         
         // newfd is a new socket descriptor for the new connection.
         // listenfd is still listening for new connections.
-
-        handle_http_request(newfd, cache);
+        resp_404(newfd);
+        // handle_http_request(newfd, cache);
 
         close(newfd);
     }
