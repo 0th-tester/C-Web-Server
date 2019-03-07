@@ -151,6 +151,8 @@ void get_file(int fd, struct cache *cache, char *request_path)
     
     struct cache_entry * cur_entry = cache_get(cache, filepath);
 
+    time_t cur_time;
+
     if ( cur_entry == NULL ) {
     
         filedata = file_load(filepath);  
@@ -162,7 +164,19 @@ void get_file(int fd, struct cache *cache, char *request_path)
         filedata->data = cur_entry->content;
         filedata->size = cur_entry->content_length;
         mime_type = cur_entry->content_type;
-            
+
+        cur_time = time(NULL);
+        // printf("cached\n"); 
+
+        if ( difftime( cur_time, cur_entry->create_at ) / 60 >= 1 ) {
+            // printf("timeout new cached\n"); 
+            cache_delete(cache, cur_entry);
+
+            filedata = file_load(filepath);  
+            mime_type = mime_type_get(request_path);  
+            cache_put(cache, filepath, mime_type, filedata->data, filedata->size);
+        
+        }
     }
 
     send_response(fd, "HTTP/1.1 200 OK", mime_type, filedata->data, filedata->size);

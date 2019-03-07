@@ -25,7 +25,9 @@ struct cache_entry *alloc_entry(char *path, char *content_type, void *content, i
     c_entry->path = strdup(path); 
     c_entry->content_type = strdup(content_type); 
     c_entry->content_length = content_length;
-    
+
+    c_entry->create_at = time(NULL);
+
     memcpy(c_entry->content, content, content_length);
 
     c_entry->prev = NULL;
@@ -194,5 +196,19 @@ struct cache_entry *cache_get(struct cache *cache, char *path)
         
     dllist_move_to_head(cache, get_entry);
     return get_entry;
+
+}
+
+/**
+ * Remove an entry from the cache
+ */
+void cache_delete(struct cache *cache, struct cache_entry *entry)
+{
+    
+    if ( cache == NULL || entry == NULL )
+        return NULL;
+
+    hashtable_delete(cache->index, entry->path);
+    free_entry(entry);
 
 }
