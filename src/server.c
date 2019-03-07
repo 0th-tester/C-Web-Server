@@ -145,14 +145,32 @@ void get_file(int fd, struct cache *cache, char *request_path)
     struct file_data * filedata;
     char *mime_type;
 
+    filedata = ( struct file_data * ) malloc(sizeof(struct file_data));
+
     sprintf(filepath, "%s/%s", SERVER_ROOT, request_path);
     
-    filedata = file_load(filepath);
-    mime_type = mime_type_get(request_path);
+    struct cache_entry * cur_entry = cache_get(cache, filepath);
+
+    if ( cur_entry == NULL ) {
     
+        filedata = file_load(filepath);  
+        mime_type = mime_type_get(request_path);  
+        cache_put(cache, filepath, mime_type, filedata->data, filedata->size);
+
+    } else {
+
+        filedata->data = cur_entry->content;
+        filedata->size = cur_entry->content_length;
+        mime_type = cur_entry->content_type;
+            
+    }
+
     send_response(fd, "HTTP/1.1 200 OK", mime_type, filedata->data, filedata->size);
     
-    free(filedata);
+    if ( cur_entry == NULL ) {
+        file_free(filedata);
+        filedata = NULL;
+    }
 }
 
 /**
@@ -166,8 +184,51 @@ char *find_start_of_body(char *header)
     ///////////////////
     // IMPLEMENT ME! // (Stretch)
     ///////////////////
+    char *find_body;
+    
+    find_body = strstr(header, "\n\n");
+    if( find_body != NULL ) return find_body;
+
+    find_body = strstr(header, "\r");
+    if( find_body != NULL ) return find_body;
+
+    find_body = strstr(header, "\n");
+    if( find_body != NULL ) return find_body;
+    // printf("%s", find_body);
+    return find_body;
 }
 
+/**
+ *  post_save
+ */
+void post_save(int fd, char * body)
+{
+    // printf("%s", body);
+    char response[128];
+    char *status; 
+    char *mime_type = mime_type_get("json");
+    int file_fd = open("data.txt", O_CREAT | O_RDWR );
+
+    if ( file_fd > 0 ) {
+    
+        flock(file_fd, LOCK_EX);
+        // printf("%s %d", body, strlen(body));
+        write(file_fd, body, strlen(body));
+        close(file_fd);
+
+        sprintf(response, "{\"%s\":\"%s\"}", "status", "ok");
+        
+        status = "HTTP/1.1 200 OK";
+
+    } else {
+        
+        sprintf(response, "%s", "check args");
+        
+        status = "HTTP/1.1 400 Bad Request";
+    
+    }
+    send_response(fd, status, mime_type, response, strlen(response));
+}
 /**
  * Handle HTTP request and send response
  */
@@ -204,7 +265,7 @@ void handle_http_request(int fd, struct cache *cache)
     // printf("%s\n", request);
     sscanf(request, "%s %s %s", method, endpoint, protocol);
     // printf("%s\n", endpoint);
-
+    
     if ( strcmp(method, "GET") == 0 ) {
          if ( strcmp(endpoint, "/d20") == 0 ) {
              get_d20(fd);
@@ -214,7 +275,13 @@ void handle_http_request(int fd, struct cache *cache)
              resp_404(fd);
          }
     } else if ( strcmp(method, "POST") == 0 ) {
-
+        // printf("%s", request);
+        char *body = find_start_of_body(request);
+        // printf("%s", body);
+        post_save(fd, body);
+        // free(body);
+        body = NULL;
+        // resp_404(fd);
     }
 }
 
