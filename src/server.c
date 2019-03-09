@@ -65,13 +65,16 @@ int send_response(int fd, char *header, char *content_type, void *body, int cont
     
     int response_length = sprintf(
         response,
-        "%s\nDate: %sConnection: close\nContent-Length: %d\nContent-Type: %s\n\n%s",
+        "%s\nDate: %sConnection: close\nContent-Length: %d\nContent-Type: %s\n\n",
         header,
         asctime(timeinfo),
         content_length,
-        content_type,
-        body
+        content_type
     );
+
+    memcpy(response + response_length, body, content_length);
+    
+    response_length += content_length;
     // printf(response);
     // Send it all!
     int rv = send(fd, response, response_length , 0);
@@ -284,6 +287,8 @@ void handle_http_request(int fd, struct cache *cache)
          if ( strcmp(endpoint, "/d20") == 0 ) {
              get_d20(fd);
          } else if ( strcmp(endpoint, "/index.html") == 0 ) {
+             get_file(fd, cache, endpoint);
+         } else if ( strcmp(endpoint, "/cat.jpg") == 0 ) {
              get_file(fd, cache, endpoint);
          } else {
              resp_404(fd);
