@@ -29,6 +29,8 @@
 #include <time.h>
 #include <sys/file.h>
 #include <fcntl.h>
+#include <signal.h>
+#include <pthread.h>
 #include "net.h"
 #include "file.h"
 #include "mime.h"
@@ -38,6 +40,14 @@
 
 #define SERVER_FILES "./serverfiles"
 #define SERVER_ROOT "./serverroot"
+
+pthread_mutex_t  mutex = PTHREAD_MUTEX_INITIALIZER; 
+// pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
+
+struct args {
+    int fd;
+    struct cache* cache;
+};
 
 /**
  * Send an HTTP response
@@ -181,7 +191,7 @@ void get_file(int fd, struct cache *cache, char *request_path)
         
         }
     }
-
+    // printf("%s\n", filedata->data);
     send_response(fd, "HTTP/1.1 200 OK", mime_type, filedata->data, filedata->size);
     
     if ( cur_entry == NULL ) {
@@ -281,7 +291,7 @@ void handle_http_request(int fd, struct cache *cache)
     char protocol[20];
     // printf("%s\n", request);
     sscanf(request, "%s %s %s", method, endpoint, protocol);
-    // printf("%s\n", endpoint);
+    printf("%s\n", endpoint);
     
     if ( strcmp(method, "GET") == 0 ) {
          if ( strcmp(endpoint, "/d20") == 0 ) {
@@ -304,11 +314,78 @@ void handle_http_request(int fd, struct cache *cache)
     }
 }
 
+void thread_cleanup(void * input)
+{
+    // printf("thread is clean up\n");
+    struct args * p_args = (struct args*)input;
+    close(p_args->fd);
+}
+
+void * connection_handle(void * input)
+{
+
+    pthread_detach(pthread_self()); 
+
+    struct args * p_args = (struct args*)input;
+
+    pthread_cleanup_push(thread_cleanup, (void*)p_args); 
+    // printf("thread id : %lu \n", pthread_self());
+    if(pthread_mutex_trylock(&mutex) == 0) {
+        
+        // printf("test_mutex_try_lock \n");
+        handle_http_request(p_args->fd, p_args->cache);
+        // handle_http_request(p_args->fd[p_args->id], p_args->cache);
+        pthread_mutex_unlock(&mutex);
+    
+    } else {
+        
+        printf("failed to get lock\n");
+
+    }
+
+    pthread_exit(0);
+
+    pthread_cleanup_pop(0);
+
+}
+
+
+void atexit_clean(void *data)
+{
+    static struct args *resource;
+
+    if (data) {
+        resource = data;
+        atexit(clean);
+    } else {
+        pthread_mutex_destroy(&mutex);
+        cache_free(resource->cache);
+    }
+}
+
+static void clean(void)
+{
+    // printf("clean\n");
+    atexit_clean(NULL);
+}
+
+
+void handle_sigint(int sig)
+{
+    printf("Caught signal %d\n", sig); 
+    // cache_free(cache);
+    exit(EXIT_SUCCESS);
+}
 /**
  * Main
  */
 int main(void)
 {
+    int t_id;
+    int p_id = 0;
+    pthread_t p_thread;
+    struct args p_args;
+
     int newfd;  // listen on sock_fd, new connection on newfd
     struct sockaddr_storage their_addr; // connector's address information
     char s[INET6_ADDRSTRLEN];
@@ -324,23 +401,30 @@ int main(void)
     }
 
     printf("webserver: waiting for connections on port %s...\n", PORT);
+    
+    p_args.fd = -1;
+    p_args.cache = cache;
 
     // This is the main loop that accepts incoming connections and
     // forks a handler process to take care of it. The main parent
     // process then goes back to waiting for new connections.
-    
-    while(1) {
+    // pthread_t p_thread;
+     
+     atexit_clean(&p_args);
+     signal(SIGINT, handle_sigint);
+
+    while(1) { 
         socklen_t sin_size = sizeof their_addr;
 
         // Parent process will block on the accept() call until someone
         // makes a new connection:
-        newfd = accept(listenfd, (struct sockaddr *)&their_addr, &sin_size);
-        if (newfd == -1) {
+         p_args.fd = accept(listenfd, (struct sockaddr *)&their_addr, &sin_size);
+        if (p_args.fd == -1) {
             perror("accept");
             continue;
         }
-
-        // Print out a message that we got the connection
+        
+        // // Print out a message that we got the connection
         inet_ntop(their_addr.ss_family,
             get_in_addr((struct sockaddr *)&their_addr),
             s, sizeof s);
@@ -349,13 +433,21 @@ int main(void)
         // newfd is a new socket descriptor for the new connection.
         // listenfd is still listening for new connections.
         // resp_404(newfd);
-        handle_http_request(newfd, cache);
+        // handle_http_request(newfd, cache);
+        // printf("%d",  p_args[p_id].fd );
+        // printf("p_args[p_id].fd , %d \n", p_args.fd[p_id]);        
+        t_id = pthread_create(&p_thread, NULL, connection_handle, (void *)&p_args);
+        // printf("\np_id %d p_thread %lu \n" , p_id, p_thread);
+        if ( t_id < 0 ) {
+            perror("thread create error:");
+            exit(EXIT_FAILURE);
+        }
 
-        close(newfd);
     }
-
     // Unreachable code
+    pthread_mutex_destroy(&mutex);
+    cache_free(cache);
 
-    return 0;
+    return EXIT_SUCCESS;
 }
 
